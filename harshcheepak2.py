@@ -40,7 +40,7 @@ class Trader:
             'valuation_strategy': 'ema',
             'true_value': 10000.0,
             'window_size': 3,
-            'max_position': 50,
+            'max_position': 30,
             'price_history': deque(maxlen=50),
             'ema': None,
             'position_sizing': 'combined',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
