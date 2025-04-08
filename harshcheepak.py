@@ -35,15 +35,15 @@ class Trader:
         # },
         'RAINFOREST_RESIN': {
             'strategy': 'market_maker',
-            'valuation_strategy': 'vwap',
+            'valuation_strategy': 'true_value',
             'true_value': 10000.0,
             'window_size': 3,
             'max_position': 50,
             'price_history': deque(maxlen=50),
             'ema': 10000,
-            'spread': 1.6,
+            'spread': 1.5,
             'order_size': 50, 
-            'skew_sensitivity': 0.02
+            'skew_sensitivity': 0.01
         },
         # 'SQUID_INK': {
         #     'strategy': 'bollinger',
@@ -86,8 +86,8 @@ class Trader:
             ask_prices = sorted(asks.keys())
             ask_volumes = [abs(asks[p]) for p in ask_prices]
 
-            vwap_bid = self.calculate_vwap(bid_prices, bid_volumes, best_bid)
-            vwap_ask = self.calculate_vwap(ask_prices, ask_volumes, best_ask)
+            vwap_bid = self.calculate_vwap(bid_prices[:5], bid_volumes[:5], best_bid)
+            vwap_ask = self.calculate_vwap(ask_prices[:5], ask_volumes[:5], best_ask)
             return (vwap_bid + vwap_ask) / 2
 
         elif strategy == 'ema':
