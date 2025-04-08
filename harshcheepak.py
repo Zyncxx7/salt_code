@@ -23,35 +23,44 @@ class TradingState:
 class Trader:
     def __init__(self):  # fixed typo
         self.product_params = {
-        'KELP': {
-            'strategy': 'keltner',
-            'valuation_strategy': 'ema',  # 'true_value', 'vwap', 'mid', etc.
-            'true_value': 2000.0,  # only used if valuation_strategy == 'true_value'
-            'window_size': 3,
-            'max_position': 50,
-            'price_history': deque(maxlen=50),
-            'ema': None,
-            'buy_price': None
-        },
+        # 'KELP': {
+        #     'strategy': 'keltner',
+        #     'valuation_strategy': 'ema',  # 'true_value', 'vwap', 'mid', etc.
+        #     'true_value': 2000.0,  # only used if valuation_strategy == 'true_value'
+        #     'window_size': 3,
+        #     'max_position': 50,
+        #     'price_history': deque(maxlen=50),
+        #     'ema': None,
+        #     'buy_price': None
+        # },
         'RAINFOREST_RESIN': {
-            'strategy': 'zscore',
-            'valuation_strategy': 'ema',
+            'strategy': 'market_maker',
+            'valuation_strategy': 'vwap',
             'true_value': 10000.0,
             'window_size': 3,
             'max_position': 50,
             'price_history': deque(maxlen=50),
-            'ema': None
+            'ema': 10000,
+            'spread': 1.6,
+            'order_size': 50, 
+            'skew_sensitivity': 0.02
         },
-        'SQUID_INK': {
-            'strategy': 'bollinger',
-            'valuation_strategy': 'ema',  # Best bid + best ask / 2
-            'true_value': 2000.0,
-            'window_size': 3,
-            'max_position': 50,
-            'price_history': deque(maxlen=50),
-            'ema': None
-        }
+        # 'SQUID_INK': {
+        #     'strategy': 'bollinger',
+        #     'valuation_strategy': 'ema',  # Best bid + best ask / 2
+        #     'true_value': 2000.0,
+        #     'window_size': 3,
+        #     'max_position': 50,
+        #     'price_history': deque(maxlen=50),
+        #     'ema': None
+        # }
     }
+    def calculate_vwap(self, prices, volumes, fallback_price):
+        total_volume = sum(volumes)
+        if total_volume == 0:
+            return fallback_price  # fallback in case there's no volume
+        vwap = sum(p * v for p, v in zip(prices, volumes)) / total_volume
+        return vwap
 
 
     def get_mid_price(self, product, order_depth):
@@ -90,7 +99,38 @@ class Trader:
             return params['ema']
 
         return mid_price  # fallback
+    # Add this in your Trader class
+    def market_maker_strategy(self, product, mid_price, state, order_depth):
+        p = self.product_params[product]
+        orders = []
 
+        # Basic config
+        spread = p.get('spread', 2)
+        order_size = p.get('order_size', 5)
+        max_position = p.get('max_position', 50)
+        position = state.position.get(product, 0)
+
+        # Skew factor: how much to shift bid/ask prices based on inventory
+        skew_sensitivity = p.get('skew_sensitivity', 0.1)
+        skew = skew_sensitivity * position
+
+        # Apply skew to bid and ask prices
+        bid_price = int(mid_price - spread / 2 - skew)
+        ask_price = int(mid_price + spread / 2 - skew)
+
+        # Adjust order sizes to avoid exceeding max position
+        bid_qty = min(order_size, max_position - position)
+        ask_qty = min(order_size, max_position + position)
+
+        if bid_qty > 0:
+            print(f"[{product}] MM Buy {bid_qty} @ {bid_price} (skew: {skew})")
+            orders.append(Order(product, bid_price, bid_qty))
+
+        if ask_qty > 0:
+            print(f"[{product}] MM Sell {ask_qty} @ {ask_price} (skew: {skew})")
+            orders.append(Order(product, ask_price, -ask_qty))
+
+        return orders
 
     def bollinger_strategy(self, product, mid_price, state):
         p = self.product_params[product]
@@ -185,12 +225,12 @@ class Trader:
         orders = []
         current_position = state.position.get(product, 0)
 
-        if z < -1:
-            qty = min(10, p['max_position'] - current_position)
+        if z < -0.9:
+            qty = min(25, p['max_position'] - current_position)
             print(f"[{product}] Z-Score Buy {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), qty))
-        elif z > 1:
-            qty = min(10, p['max_position'] + current_position)
+        elif z > 0.9:
+            qty = min(25, p['max_position'] + current_position)
             print(f"[{product}] Z-Score Sell {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), -qty))
 
@@ -320,7 +360,12 @@ class Trader:
                 result[product] = self.fair_price_mm_strategy(product, order_depth, state)
             elif strategy == 'trend_follow_sl':
                 result[product] = self.trend_follow_sl_strategy(product, mid_price, state)
+            elif strategy == 'stable_mm':
+                result[product] = self.crossover_strategy(product, mid_price, state)
+            elif strategy == 'market_maker':
+                result[product] = self.market_maker_strategy(product, mid_price, state, order_depth)
             else:
                 result[product] = []
+
 
         return result, 0, json.dumps({})
