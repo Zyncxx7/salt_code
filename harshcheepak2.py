@@ -23,40 +23,42 @@ class TradingState:
 class Trader:
     def __init__(self):  # fixed typo
         self.product_params = {
-        'KELP': {
-            'strategy': 'keltner',
-            'valuation_strategy': 'ema',  # 'true_value', 'vwap', 'mid', etc.
-            'true_value': 2000.0,  # only used if valuation_strategy == 'true_value'
-            'window_size': 10,
-            'max_position': 50,
-            'price_history': deque(maxlen=50),
-            'ema': None,
-            'buy_price': None,
-            'position_sizing': 'combined',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
-            'base_qty': 10
-        },
+        # 'KELP': {
+        #     'strategy': 'keltner',
+        #     'valuation_strategy': 'ema',  # 'true_value', 'vwap', 'mid', etc.
+        #     'true_value': 2000.0,  # only used if valuation_strategy == 'true_value'
+        #     'window_size': 10,
+        #     'max_position': 50,
+        #     'price_history': deque(maxlen=50),
+        #     'ema': None,
+        #     'buy_price': None,
+        #     'position_sizing': 'combined',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
+        #     'base_qty': 10
+        # },
+        #Kelp makes 2.8k profit as of now
         'RAINFOREST_RESIN': {
             'strategy': 'zscore',
             'valuation_strategy': 'ema',
             'true_value': 10000.0,
             'window_size': 3,
-            'max_position': 30,
-            'price_history': deque(maxlen=50),
-            'ema': None,
-            'position_sizing': 'combined',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
-            'base_qty': 10
-        },
-        'SQUID_INK': {
-            'strategy': 'bollinger',
-            'valuation_strategy': 'ema',  # Best bid + best ask / 2
-            'true_value': 2000.0,
-            'window_size': 3,
             'max_position': 50,
             'price_history': deque(maxlen=50),
             'ema': None,
-            'position_sizing': 'combined',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
+            'position_sizing': 'fixed',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
             'base_qty': 10
-        }
+        },
+        #2.8k profit
+        # 'SQUID_INK': {
+        #     'strategy': 'bollinger',
+        #     'valuation_strategy': 'ema',  # Best bid + best ask / 2
+        #     'true_value': 2000.0,
+        #     'window_size': 3,
+        #     'max_position': 50,
+        #     'price_history': deque(maxlen=50),
+        #     'ema': None,
+        #     'position_sizing': 'combined',  # options: 'fixed', 'volatility_adjusted', 'confidence_weighted', 'combined'
+        #     'base_qty': 10
+        # }
     }
     def get_position_size(self, product, mid_price, confidence=None):
         p = self.product_params[product]
@@ -232,7 +234,7 @@ class Trader:
             #print(f"[{product}] Z-Score Buy {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), qty))
         elif z > 1:
-            qty = min(10, p['max_position'] + current_position)
+            qty = min(15, p['max_position'] + current_position)
             #print(f"[{product}] Z-Score Sell {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), -qty))
 

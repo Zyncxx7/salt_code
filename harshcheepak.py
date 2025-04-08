@@ -63,7 +63,7 @@ class Trader:
         best_bid = max(bids) if bids else 0
         best_ask = min(asks) if asks else 0
 
-        mid_price = (best_bid + best_ask) / 1.9 if best_bid and best_ask else 0
+        mid_price = (best_bid + best_ask) / 2 if best_bid and best_ask else 0
 
         if strategy == 'true_value':
             return params.get('true_value', mid_price)
@@ -82,12 +82,7 @@ class Trader:
             return (vwap_bid + vwap_ask) / 2
 
         elif strategy == 'ema':
-            if product=='KELP':
-                alpha = 2 / (params['window_size'] + 1)
-            elif product=='RAINFOREST_RESIN':
-                alpha = 2 / (params['window_size'] + 1)
-            elif product=="SQUID_INK":
-                alpha = 2 / (params['window_size'] + 1)
+            alpha = 2 / (params['window_size'] + 1)
             if params.get('ema') is None:
                 params['ema'] = mid_price
             else:
@@ -115,12 +110,12 @@ class Trader:
         current_position = state.position.get(product, 0)
 
         if mid_price < lower:
-            qty = min(20, p['max_position'] - current_position)
+            qty = min(10, p['max_position'] - current_position)
             print(f"[{product}] Bollinger Buy {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), qty))
 
         elif mid_price > upper:
-            qty = min(20, p['max_position'] + current_position)
+            qty = min(10, p['max_position'] + current_position)
             print(f"[{product}] Bollinger Sell {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), -qty))
 
@@ -191,11 +186,11 @@ class Trader:
         current_position = state.position.get(product, 0)
 
         if z < -1:
-            qty = min(20, p['max_position'] - current_position)
+            qty = min(10, p['max_position'] - current_position)
             print(f"[{product}] Z-Score Buy {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), qty))
         elif z > 1:
-            qty = min(20, p['max_position'] + current_position)
+            qty = min(10, p['max_position'] + current_position)
             print(f"[{product}] Z-Score Sell {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), -qty))
 
@@ -228,37 +223,27 @@ class Trader:
     def momentum_strategy(self, product, mid_price, state):
         p = self.product_params[product]
         p['price_history'].append(mid_price)
-
         if len(p['price_history']) < 4:
             return []
 
         changes = [p['price_history'][i] - p['price_history'][i - 1] for i in range(1, len(p['price_history']))]
-        #print(f"[{product}] Momentum changes: {changes[-4:]}")
+        print(f"[{product}] Momentum changes: {changes[-4:]}")
 
         orders = []
         current_position = state.position.get(product, 0)
 
-        # Initialize buy price if not already done
-        if 'buy_price' not in p:
-            p['buy_price'] = None
-
-        # Buy logic: upward momentum and we aren't max long yet
-        if changes[-1] > 0 and changes[-2] > 0 and current_position < p['max_position']:
-            qty = self.get_position_size(product, mid_price)
-            orders.append(Order(product, int(mid_price), qty))
+        if changes[-1] > 0 and changes[-2] > 0:
+            qty = min(10, p['max_position'] - current_position)
             p['buy_price'] = mid_price
-            #print(f"[{product}] Momentum BUY {qty} @ {mid_price}")
-
-        # Sell logic: 3 consecutive drops or triggered stop-loss
-        elif (all(c < 0 for c in changes[-3:]) or
-            (p['buy_price'] and mid_price < 0.8 * p['buy_price'])) and current_position > 0:
-            qty = current_position  # Sell all current long
-            orders.append(Order(product, int(mid_price), -qty))
-            #print(f"[{product}] Momentum SELL {qty} @ {mid_price}")
+            print(f"[{product}] Momentum Buy {qty} at {mid_price}")
+            orders.append(Order(product, int(mid_price), qty))
+        elif all(c < 0 for c in changes[-3:]) or (p['buy_price'] and mid_price < 0.8 * p['buy_price']):
+            qty = min(10, p['max_position'] + current_position)
             p['buy_price'] = None
+            print(f"[{product}] Momentum Sell {qty} at {mid_price}")
+            orders.append(Order(product, int(mid_price), -qty))
 
         return orders
-
 
     def fair_price_mm_strategy(self, product, order_depth, state):
         best_bid = max(order_depth.buy_orders.keys(), default=0)
@@ -284,117 +269,31 @@ class Trader:
         return orders
 
     def trend_follow_sl_strategy(self, product, mid_price, state):
-        import numpy as np
         p = self.product_params[product]
         p['price_history'].append(mid_price)
-
-        if 'cooldown' not in p:
-            p['cooldown'] = 0
-        if 'trailing_stop' not in p:
-            p['trailing_stop'] = None
-
-        if p['cooldown'] > 0:
-            print(f"[{product}] In cooldown: {p['cooldown']} ticks remaining")
-            p['cooldown'] -= 1
+        if len(p['price_history']) < 3:
             return []
 
-        if len(p['price_history']) < p['window_size']:
-            return []
-
-        prices = list(p['price_history'])
-        returns = np.diff(prices)
-        x = np.arange(len(prices))
-        slope = np.polyfit(x, prices, 1)[0]
-        atr = np.mean(np.abs(returns))
-
-        print(f"[{product}] Trend slope: {slope:.4f}, ATR: {atr:.2f}")
+        changes = [p['price_history'][-i] - p['price_history'][-i - 1] for i in range(1, 3)]
+        print(f"[{product}] Trend SL changes: {changes[::-1]}")
 
         orders = []
         current_position = state.position.get(product, 0)
 
-        # Entry condition
-        if slope > 0.2 and current_position <= 0:
+        if changes[-1] > 0 and changes[-2] > 0:
             qty = min(10, p['max_position'] - current_position)
-            orders.append(Order(product, int(mid_price), qty))
             p['buy_price'] = mid_price
-            p['trailing_stop'] = mid_price - 1.5 * atr
-            print(f"[{product}] Buy {qty} @ {mid_price}, Trail Stop @ {p['trailing_stop']:.2f}")
-
-        # Exit logic if in position
-        if p.get('buy_price') and current_position > 0:
-            # Update trailing stop
-            new_trailing = mid_price - 1.5 * atr
-            if new_trailing > p['trailing_stop']:
-                p['trailing_stop'] = new_trailing
-                print(f"[{product}] Trailing stop updated to {p['trailing_stop']:.2f}")
-
-            # Stop-loss or take-profit
-            if mid_price < p['trailing_stop']:
-                qty = current_position
-                orders.append(Order(product, int(mid_price), -qty))
-                print(f"[{product}] TRAILING STOP SELL {qty} @ {mid_price}")
-                p['buy_price'] = None
-                p['trailing_stop'] = None
-                p['cooldown'] = 5  # wait 5 ticks before re-entering
-
-        return orders
-
-        return orders
-    def orderbook_imbalance_strategy(self, product, order_depth, state):
-        orders = []
-        bids = order_depth.buy_orders
-        asks = order_depth.sell_orders
-        best_bid = max(bids.keys(), default=0)
-        best_ask = min(asks.keys(), default=0)
-        bid_volume = sum(bids.values())
-        ask_volume = sum(abs(v) for v in asks.values())
-        total_volume = bid_volume + ask_volume
-        imbalance = (bid_volume - ask_volume) / total_volume if total_volume != 0 else 0
-        print(f"[{product}] Orderbook Imbalance: {imbalance:.2f}")
-
-        current_position = state.position.get(product, 0)
-        max_position = self.product_params[product]['max_position']
-
-        if imbalance > 0.3:
-            volume = min(max_position - current_position, 10)
-            orders.append(Order(product, best_ask, volume))
-            print(f"[{product}] Buying {volume} at {best_ask} due to OB imbalance")
-        elif imbalance < -0.3:
-            volume = min(max_position + current_position, 10)
-            orders.append(Order(product, best_bid, -volume))
-            print(f"[{product}] Selling {volume} at {best_bid} due to OB imbalance")
-
-        return orders
-
-    def keltner_channel_strategy(self, product, mid_price, state):
-        p = self.product_params[product]
-        p['price_history'].append(mid_price)
-        if len(p['price_history']) < 10:
-            return []
-
-        ema = sum(p['price_history']) / len(p['price_history'])
-        atr = sum(abs(p['price_history'][i] - p['price_history'][i - 1]) for i in range(1, len(p['price_history']))) / (len(p['price_history']) - 1)
-        upper_band = ema + 1.5 * atr
-        lower_band = ema - 1.5 * atr
-
-        print(f"[{product}] Keltner Channel: EMA={ema:.2f}, ATR={atr:.2f}, Upper={upper_band:.2f}, Lower={lower_band:.2f}")
-
-        orders = []
-        current_position = state.position.get(product, 0)
-        max_position = p['max_position']
-
-        if mid_price < lower_band:
-            qty = min(10, max_position - current_position)
+            print(f"[{product}] Trend Buy {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), qty))
-            print(f"[{product}] Buy {qty} at {mid_price} (Below Keltner Lower Band)")
-        elif mid_price > upper_band:
-            qty = min(10, max_position + current_position)
+
+        elif p.get('buy_price') and mid_price < 0.8 * p['buy_price']:
+            qty = min(10, p['max_position'] + current_position)
+            print(f"[{product}] Trend Stop Loss Sell {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), -qty))
-            print(f"[{product}] Sell {qty} at {mid_price} (Above Keltner Upper Band)")
+            p['buy_price'] = None
 
         return orders
 
-        return orders
     def run(self, state: TradingState):
         result = {}
         for product, order_depth in state.order_depths.items():
@@ -419,12 +318,6 @@ class Trader:
                 result[product] = self.moving_average_strategy(product, mid_price, state)
             elif strategy == 'fair_price_mm':
                 result[product] = self.fair_price_mm_strategy(product, order_depth, state)
-            elif strategy == 'trend_follow_sl':
-                result[product] = self.trend_follow_sl_strategy(product, mid_price, state)
-            elif strategy == 'orderbook_imbalance':
-                result[product] = self.orderbook_imbalance_strategy(product, order_depth, state)
-            elif strategy == 'keltner_channel':
-                result[product] = self.keltner_channel_strategy(product, mid_price, state)
             elif strategy == 'trend_follow_sl':
                 result[product] = self.trend_follow_sl_strategy(product, mid_price, state)
             else:
