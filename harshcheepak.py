@@ -2,6 +2,7 @@ from typing import Dict, List
 from collections import deque
 import json
 import numpy as np
+import statistics
 
 class Order:
     def __init__(self, symbol, price, quantity):  # fixed typo: _init_ → __init__
@@ -104,33 +105,74 @@ class Trader:
         p = self.product_params[product]
         orders = []
 
-        # Basic config
-        spread = p.get('spread', 2)
-        order_size = p.get('order_size', 5)
-        max_position = p.get('max_position', 50)
+        price_history = p['price_history']
+        price_history.append(mid_price)
+        if len(price_history) < 5:
+            return []
+
         position = state.position.get(product, 0)
+        max_position = p.get('max_position', 50)
 
-        # Skew factor: how much to shift bid/ask prices based on inventory
+        # === Dynamic Spread based on volatility ===
+        recent_returns = [price_history[-i] - price_history[-i - 1] for i in range(1, 5)]
+        volatility = max(1, statistics.stdev(recent_returns))  # avoid zero
+        base_spread = p.get('base_spread', 2)
+        spread = base_spread + 0.02 * volatility  # wider in volatility
+
+        # === Dynamic Skew based on inventory and trend ===
         skew_sensitivity = p.get('skew_sensitivity', 0.1)
-        skew = skew_sensitivity * position
+        price_trend = sum(recent_returns[-2:])
+        skew = skew_sensitivity * position - 0.2 * price_trend
 
-        # Apply skew to bid and ask prices
+        # === Fixed Order Size ===
+        order_size = p.get('order_size', 5)
+
+        # Calculate bid/ask prices
         bid_price = int(mid_price - spread / 2 - skew)
         ask_price = int(mid_price + spread / 2 - skew)
 
-        # Adjust order sizes to avoid exceeding max position
+        # Limit quantity to not exceed max position
         bid_qty = min(order_size, max_position - position)
         ask_qty = min(order_size, max_position + position)
 
         if bid_qty > 0:
-            print(f"[{product}] MM Buy {bid_qty} @ {bid_price} (skew: {skew})")
+            print(f"[{product}] MM Buy {bid_qty} @ {bid_price} (skew: {skew:.2f}, spread: {spread:.2f})")
             orders.append(Order(product, bid_price, bid_qty))
 
         if ask_qty > 0:
-            print(f"[{product}] MM Sell {ask_qty} @ {ask_price} (skew: {skew})")
+            print(f"[{product}] MM Sell {ask_qty} @ {ask_price} (skew: {skew:.2f}, spread: {spread:.2f})")
             orders.append(Order(product, ask_price, -ask_qty))
 
         return orders
+    # def market_maker_strategy(self, product, mid_price, state, order_depth):
+    #     p = self.product_params[product]
+    #     orders = []
+
+    #     # Basic config
+    #     spread = p.get('spread', 2)
+    #     order_size = p.get('order_size', 5)
+    #     max_position = p.get('max_position', 50)
+    #     position = state.position.get(product, 0)
+
+    #     # Skew factor: how much to shift bid/ask prices based on inventory
+    #     skew_sensitivity = p.get('skew_sensitivity', 0.1)
+    #     skew = skew_sensitivity * position
+
+    #     # Apply skew to bid and ask prices
+    #     bid_price = int(mid_price - spread / 2 - skew)
+    #     ask_price = int(mid_price + spread / 2 - skew)
+
+    #     # Adjust order sizes to avoid exceeding max position
+    #     bid_qty = min(order_size, max_position - position)
+    #     ask_qty = min(order_size, max_position + position)
+
+    #     if bid_qty > 0:
+    #         print(f"[{product}] MM Buy {bid_qty} @ {bid_price} (skew: {skew})")
+    #         orders.append(Order(product, bid_price, bid_qty))
+
+    #     if ask_qty > 0:
+    #         print(f"[{product}] MM Sell {ask_qty} @ {ask_price} (skew: {skew})")
+    #         orders.append(Order(product, ask_price, -ask_qty))
 
     def bollinger_strategy(self, product, mid_price, state):
         p = self.product_params[product]
