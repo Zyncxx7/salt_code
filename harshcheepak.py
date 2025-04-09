@@ -42,7 +42,7 @@ class Trader:
             'max_position': 50,
             'price_history': deque(maxlen=50),
             'ema': 10000,
-            'spread': 1.8,
+            'base_spread': 3,
             'order_size': 50, 
             'skew_sensitivity': 0.01
         },
@@ -114,14 +114,14 @@ class Trader:
         max_position = p.get('max_position', 50)
 
         # === Dynamic Spread based on volatility ===
-        recent_returns = [price_history[-i] - price_history[-i - 1] for i in range(1, 5)]
+        recent_returns = [price_history[-i] - price_history[-i - 1] for i in range(1, 10)]
         volatility = max(1, statistics.stdev(recent_returns))  # avoid zero
         base_spread = p.get('base_spread', 2)
-        spread = base_spread + 0.02 * volatility  # wider in volatility
+        spread = base_spread + 0.05 * volatility  # wider in volatility
 
         # === Dynamic Skew based on inventory and trend ===
         skew_sensitivity = p.get('skew_sensitivity', 0.1)
-        price_trend = sum(recent_returns[-2:])
+        price_trend = sum(recent_returns[-4:])
         skew = skew_sensitivity * position - 0.2 * price_trend
 
         # === Fixed Order Size ===
