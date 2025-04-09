@@ -2,7 +2,6 @@ from typing import Dict, List
 from collections import deque
 import json
 import numpy as np
-import statistics
 
 class Order:
     def __init__(self, symbol, price, quantity):  # fixed typo: _init_ → __init__
@@ -56,6 +55,8 @@ class Trader:
             'ema': None
         }
     }
+
+
     def calculate_vwap(self, prices, volumes, fallback_price):
         total_volume = sum(volumes)
         if total_volume == 0:
@@ -267,12 +268,12 @@ class Trader:
         orders = []
         current_position = state.position.get(product, 0)
 
-        if z < -0.9:
-            qty = min(25, p['max_position'] - current_position)
+        if z < -1:
+            qty = min(10, p['max_position'] - current_position)
             print(f"[{product}] Z-Score Buy {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), qty))
-        elif z > 0.9:
-            qty = min(25, p['max_position'] + current_position)
+        elif z > 1:
+            qty = min(10, p['max_position'] + current_position)
             print(f"[{product}] Z-Score Sell {qty} at {mid_price}")
             orders.append(Order(product, int(mid_price), -qty))
 
@@ -375,60 +376,6 @@ class Trader:
             p['buy_price'] = None
 
         return orders
-    def orderbook_imbalance_strategy(self, product, order_depth, state):
-        orders = []
-        bids = order_depth.buy_orders
-        asks = order_depth.sell_orders
-        best_bid = max(bids.keys(), default=0)
-        best_ask = min(asks.keys(), default=0)
-        bid_volume = sum(bids.values())
-        ask_volume = sum(abs(v) for v in asks.values())
-        total_volume = bid_volume + ask_volume
-        imbalance = (bid_volume - ask_volume) / total_volume if total_volume != 0 else 0
-        #print(f"[{product}] Orderbook Imbalance: {imbalance:.2f}")
-
-        current_position = state.position.get(product, 0)
-        max_position = self.product_params[product]['max_position']
-
-        if imbalance > 0.3:
-            volume = min(max_position - current_position, 10)
-            orders.append(Order(product, best_ask, volume))
-            #print(f"[{product}] Buying {volume} at {best_ask} due to OB imbalance")
-        elif imbalance < -0.3:
-            volume = min(max_position + current_position, 10)
-            orders.append(Order(product, best_bid, -volume))
-            #print(f"[{product}] Selling {volume} at {best_bid} due to OB imbalance")
-
-        return orders
-
-    def keltner_channel_strategy(self, product, mid_price, state):
-        p = self.product_params[product]
-        p['price_history'].append(mid_price)
-        if len(p['price_history']) < 10:
-            return []
-
-        ema = sum(p['price_history']) / len(p['price_history'])
-        atr = sum(abs(p['price_history'][i] - p['price_history'][i - 1]) for i in range(1, len(p['price_history']))) / (len(p['price_history']) - 1)
-        upper_band = ema + 1.5 * atr
-        lower_band = ema - 1.5 * atr
-
-        #print(f"[{product}] Keltner Channel: EMA={ema:.2f}, ATR={atr:.2f}, Upper={upper_band:.2f}, Lower={lower_band:.2f}")
-
-        orders = []
-        current_position = state.position.get(product, 0)
-        max_position = p['max_position']
-
-        if mid_price < lower_band:
-            qty = min(10, max_position - current_position)
-            orders.append(Order(product, int(mid_price), qty))
-            #print(f"[{product}] Buy {qty} at {mid_price} (Below Keltner Lower Band)")
-        elif mid_price > upper_band:
-            qty = min(10, max_position + current_position)
-            orders.append(Order(product, int(mid_price), -qty))
-            #print(f"[{product}] Sell {qty} at {mid_price} (Above Keltner Upper Band)")
-
-        return orders
-
 
     def run(self, state: TradingState):
         result = {}
@@ -456,16 +403,7 @@ class Trader:
                 result[product] = self.fair_price_mm_strategy(product, order_depth, state)
             elif strategy == 'trend_follow_sl':
                 result[product] = self.trend_follow_sl_strategy(product, mid_price, state)
-            elif strategy == 'orderbook_imbalance':
-                result[product] = self.orderbook_imbalance_strategy(product, order_depth, state)
-            elif strategy == 'keltner_channel':
-                result[product] = self.keltner_channel_strategy(product, mid_price, state)
-            elif strategy == 'stable_mm':
-                result[product] = self.crossover_strategy(product, mid_price, state)
-            elif strategy == 'market_maker':
-                result[product] = self.market_maker_strategy(product, mid_price, state, order_depth)
             else:
                 result[product] = []
-
 
         return result, 0, json.dumps({})
